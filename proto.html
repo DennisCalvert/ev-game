@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Board Game Prototype - Expanded</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        font-family: sans-serif;
+        background-color: #fafafa;
+        padding: 20px;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(4, 80px);
+        gap: 10px;
+        margin: 40px auto;
+        width: max-content;
+      }
+
+      .space {
+        width: 80px;
+        height: 80px;
+        background-color: #eee;
+        border: 2px solid #333;
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+      }
+
+      .shortcut {
+        background-color: #b2e0ff;
+      }
+
+      .piece {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        cursor: pointer;
+        border: 2px solid white;
+      }
+
+      .player1 {
+        background-color: red;
+      }
+      .player2 {
+        background-color: green;
+      }
+
+      .controls {
+        text-align: center;
+        margin-top: 20px;
+      }
+
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+
+      #turnInfo {
+        margin-top: 10px;
+        font-weight: bold;
+      }
+
+      #diceResult {
+        font-size: 24px;
+        margin: 10px 0;
+      }
+
+      #message {
+        margin-top: 10px;
+        color: #444;
+        font-size: 18px;
+      }
+
+      .highlight {
+        outline: 3px solid gold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Board Game Prototype</h1>
+
+    <div class="board" id="gameBoard">
+      <div class="space" id="space-0">0</div>
+      <div class="space" id="space-1">1</div>
+      <div class="space" id="space-2">2</div>
+      <div class="space shortcut" id="space-10">10</div>
+      <div class="space" id="space-3">3</div>
+      <div class="space" id="space-4">4</div>
+      <div class="space" id="space-5">5</div>
+      <div class="space" id="space-6">🏁</div>
+      <div class="space" id="space-11">11</div>
+    </div>
+
+    <div class="controls">
+      <button onclick="rollDice()">🎲 Roll Dice</button>
+      <div id="diceResult">Roll: -</div>
+      <div id="turnInfo">Current turn: Player 1</div>
+      <div id="message"></div>
+    </div>
+
+    <button id="playAgainBtn" onclick="resetGame()" style="display: none">
+      🔁 Play Again
+    </button>
+
+    <script>
+      const board = {
+        0: { id: 0, next: [1] },
+        1: { id: 1, next: [2] },
+        2: { id: 2, next: [3, 10] }, // Branching
+        3: { id: 3, next: [4] },
+        4: { id: 4, next: [5] },
+        5: { id: 5, next: [6] },
+        6: { id: 6, next: [] },
+        10: { id: 10, next: [11] },
+        11: { id: 11, next: [5] },
+      };
+
+      const players = [
+        {
+          id: "Player 1",
+          color: "player1",
+          pieces: [{ position: 0 }, { position: 0 }],
+        },
+        {
+          id: "Player 2",
+          color: "player2",
+          pieces: [{ position: 1 }, { position: 1 }],
+        },
+      ];
+
+      let currentPlayerIndex = 0;
+      let rolledNumber = 0;
+      let canMove = false;
+
+      function renderPieces() {
+        document.querySelectorAll(".piece").forEach((p) => p.remove());
+
+        players.forEach((player, pIndex) => {
+          player.pieces.forEach((piece, i) => {
+            if (piece.position !== null) {
+              const space = document.getElementById(`space-${piece.position}`);
+              const div = document.createElement("div");
+              div.className = `piece ${player.color}`;
+              div.dataset.player = pIndex;
+              div.dataset.piece = i;
+              div.onclick = () => tryMovePiece(pIndex, i);
+              space.appendChild(div);
+            }
+          });
+        });
+      }
+
+      function rollDice() {
+        if (canMove) return;
+        rolledNumber = Math.floor(Math.random() * 6) + 1;
+        document.getElementById(
+          "diceResult"
+        ).textContent = `Roll: ${rolledNumber}`;
+
+        const currentPlayer = players[currentPlayerIndex];
+        const hasMove = currentPlayer.pieces.some((piece) => {
+          const options = getMovePaths(piece.position, rolledNumber);
+          return options.length > 0;
+        });
+
+        if (!hasMove) {
+          document.getElementById(
+            "message"
+          ).textContent = `${currentPlayer.id} has no valid moves. Skipping turn.`;
+          setTimeout(() => {
+            nextTurn();
+          }, 2000);
+          return;
+        }
+
+        document.getElementById(
+          "message"
+        ).textContent = `Select a piece to move ${rolledNumber} step(s)`;
+        canMove = true;
+      }
+
+      function tryMovePiece(playerIndex, pieceIndex) {
+        if (
+          !canMove ||
+          rolledNumber === 0 ||
+          playerIndex !== currentPlayerIndex
+        ) {
+          document.getElementById("message").textContent =
+            "Roll the die first!";
+          return;
+        }
+
+        const piece = players[playerIndex].pieces[pieceIndex];
+        const moveOptions = getMovePaths(piece.position, rolledNumber);
+
+        if (moveOptions.length === 0) {
+          document.getElementById("message").textContent =
+            "This piece has no valid moves.";
+          return;
+        }
+
+        if (moveOptions.length === 1) {
+          // Only one path — move automatically
+          moveTo(piece, moveOptions[0]);
+        } else {
+          // Multiple paths — let player choose
+          highlightOptions(moveOptions, piece);
+          document.getElementById("message").textContent =
+            "Select a destination.";
+        }
+      }
+
+      function moveTo(piece, path) {
+        piece.position = path[path.length - 1];
+
+        // Capture logic
+        const opponentIndex = (currentPlayerIndex + 1) % players.length;
+        const opponent = players[opponentIndex];
+        opponent.pieces.forEach((op) => {
+          if (op.position === piece.position) {
+            op.position = 0; // send back to start
+            document.getElementById(
+              "message"
+            ).textContent = `${players[currentPlayerIndex].id} captured a piece!`;
+          }
+        });
+
+        // Win condition
+        if (piece.position === 6) {
+          document.getElementById(
+            "message"
+          ).textContent = `${players[currentPlayerIndex].id} wins!`;
+          document.getElementById("playAgainBtn").style.display =
+            "inline-block";
+          disableGame();
+          return;
+        }
+
+        canMove = false;
+        nextTurn();
+        renderPieces();
+      }
+
+      function getMovePaths(startId, steps) {
+        const paths = [];
+
+        function dfs(currentId, remainingSteps, path) {
+          if (remainingSteps === 0) {
+            paths.push([...path, currentId]);
+            return;
+          }
+          const currentSpace = board[currentId];
+          if (!currentSpace || currentSpace.next.length === 0) return;
+          currentSpace.next.forEach((nextId) => {
+            dfs(nextId, remainingSteps - 1, [...path, currentId]);
+          });
+        }
+
+        dfs(startId, steps, []);
+        return paths;
+      }
+
+      function highlightOptions(options, piece) {
+        clearHighlights();
+
+        options.forEach((path) => {
+          const dest = path[path.length - 1];
+          const el = document.getElementById(`space-${dest}`);
+          if (el) {
+            el.classList.add("highlight");
+            el.onclick = () => {
+              clearHighlights();
+              moveTo(piece, path);
+            };
+          }
+        });
+      }
+
+      function clearHighlights() {
+        document.querySelectorAll(".highlight").forEach((el) => {
+          el.classList.remove("highlight");
+          el.onclick = null;
+        });
+      }
+
+      function nextTurn() {
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        document.getElementById(
+          "turnInfo"
+        ).textContent = `Current turn: ${players[currentPlayerIndex].id}`;
+        rolledNumber = 0;
+        document.getElementById("diceResult").textContent = `Roll: -`;
+        document.getElementById("message").textContent = "";
+      }
+
+      function disableGame() {
+        canMove = false;
+        document
+          .querySelectorAll("button")
+          .forEach((btn) => (btn.disabled = true));
+      }
+
+      function resetGame() {
+        // Reset player positions
+        players[0].pieces = [{ position: 0 }, { position: 0 }];
+        players[1].pieces = [{ position: 1 }, { position: 1 }];
+
+        currentPlayerIndex = 0;
+        rolledNumber = 0;
+        canMove = false;
+
+        document.getElementById("diceResult").textContent = "Roll: -";
+        document.getElementById(
+          "turnInfo"
+        ).textContent = `Current turn: ${players[0].id}`;
+        document.getElementById("message").textContent = "";
+        document
+          .querySelectorAll("button")
+          .forEach((btn) => (btn.disabled = false));
+        document.getElementById("playAgainBtn").style.display = "none";
+
+        renderPieces();
+      }
+
+      // Initial render
+      renderPieces();
+    </script>
+  </body>
+</html>
